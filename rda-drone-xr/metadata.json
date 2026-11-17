@@ -1,0 +1,6 @@
+{
+  "name": "RDA Drone XR",
+  "description": "Simulação espacial 3D de patrulha e rastreamento com drone virtual, telemetria em tempo real, geofence e suporte WebXR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
