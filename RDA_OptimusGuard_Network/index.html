@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RDA OptimusGuard · Network</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, sans-serif; background: #09111f; color: #e3efff; }
+    body { max-width: 1160px; margin: auto; padding: 35px 20px; }
+    header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    h1 { font-size: 2rem; margin: 0; }
+    h1 span { color: #60d6ff; }
+    h2 { margin: 0 0 8px; font-size: 1.15rem; }
+    p, small { color: #9cb2cb; }
+    .tag { border: 1px solid #39617e; border-radius: 20px; padding: 8px 15px; color: #a9eaff; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 26px 0; }
+    .card { border: 1px solid #263b58; background: #101d31; border-radius: 16px; padding: 20px; }
+    .num { font-size: 2rem; font-weight: 750; }
+    .label { color: #92a9c7; }
+    button, input::file-selector-button { background: #1875a8; color: white; border: 0; border-radius: 9px; padding: 10px 14px; cursor: pointer; }
+    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #263b58; }
+    th { color: #a8c8e6; }
+    .scroll { overflow: auto; }
+    .ok { color: #70e2ba; }
+    .fail { color: #ffacaa; }
+    .warn { color: #ffd38a; }
+    .muted { color: #abb7c5; }
+    code { background: #17263b; padding: 3px 6px; border-radius: 5px; }
+    footer { margin-top: 30px; color: #9cb2cb; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>RDA <span>OptimusGuard</span></h1>
+      <p>Network Integrity · Diagnóstico local OpenAI</p>
+    </div>
+    <div class="tag">OFFLINE · PRIVACIDADE</div>
+  </header>
+  <section class="cards">
+    <div class="card"><div class="label">Hosts testados</div><div id="hosts" class="num">—</div></div>
+    <div class="card"><div class="label">Falhas DNS / TCP / TLS</div><div id="fails" class="num">—</div></div>
+    <div class="card"><div class="label">HTTP 4xx / 5xx</div><div id="http" class="num">—</div></div>
+    <div class="card"><div class="label">Entradas HAR</div><div id="har" class="num">—</div></div>
+  </section>
+  <section class="card">
+    <h2>Carregar relatório JSON</h2>
+    <p>Selecione <code>reports/latest.json</code>. Se esta pasta for servida localmente, o painel também tenta esse arquivo sozinho. Nada é enviado para fora do navegador.</p>
+    <div class="bar">
+      <input id="file" type="file" accept=".json,application/json" aria-label="Relatório JSON">
+      <span id="status" class="muted">Nenhum relatório carregado</span>
+    </div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <h2>Conectividade por domínio</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Domínio</th><th>DNS</th><th>TCP 443</th><th>TLS</th><th>HTTP</th><th>IPs</th><th>Detalhe</th></tr>
+        </thead>
+        <tbody id="results"><tr><td colspan="7">Carregue um relatório para ver os resultados.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <h2>Resumo HAR</h2>
+    <p>Somente host, esquema, status e duração. Caminhos, consultas e credenciais não entram no JSON.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Host</th><th>Esquema</th><th>Status</th><th>Duração (ms)</th><th>Erro</th></tr>
+        </thead>
+        <tbody id="har-rows"><tr><td colspan="5">Nenhuma entrada HAR neste relatório.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card" style="margin-top:16px">
+    <h2>Observações de segurança</h2>
+    <p>HTTP 403/404 pode ser comportamento normal. Os curingas de domínio são representados por hosts de amostra. Este painel não testa UDP 3478 nem a negociação WebSocket. Não carregue arquivos HAR brutos neste painel.</p>
+  </section>
+  <footer>RDA OptimusGuard · Ferramenta defensiva, de diagnóstico, sem alterações automáticas de firewall ou configuração da rede.</footer>
+  <script>
+    const $ = id => document.getElementById(id);
+    const safe = value => String(value ?? '');
+    const HAR_LIMIT = 300;
+
+    function tone(value) {
+      const text = safe(value);
+      if (text === 'OK' || (Number(text) >= 200 && Number(text) < 400)) return 'ok';
+      if (text === 'FAIL' || text === 'ERROR' || Number(text) >= 500) return 'fail';
+      if (Number(text) >= 400) return 'warn';
+      return 'muted';
+    }
+
+    function cell(tr, value) {
+      const td = document.createElement('td');
+      td.textContent = safe(value);
+      const style = tone(value);
+      if (style) td.className = style;
+      tr.append(td);
+    }
+
+    function emptyRow(body, columns, message) {
+      body.replaceChildren();
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = columns;
+      td.textContent = message;
+      tr.append(td);
+      body.append(tr);
+    }
+
+    function render(report, label) {
+      const rows = Array.isArray(report.network) ? report.network : [];
+      const har = Array.isArray(report.har) ? report.har : [];
+      $('hosts').textContent = rows.length;
+      $('fails').textContent = rows.filter(row => ['dns', 'tcp443', 'tls'].some(key => row[key] === 'FAIL')).length;
+      $('http').textContent = rows.filter(row => Number(row.http) >= 400).length;
+      $('har').textContent = har.length;
+      $('status').textContent = 'Relatório carregado: ' + safe(label || report.generated_utc);
+
+      const results = $('results');
+      results.replaceChildren();
+      if (!rows.length) {
+        emptyRow(results, 7, 'Nenhum host no relatório.');
+      } else {
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          cell(tr, row.host);
+          for (const key of ['dns', 'tcp443', 'tls', 'http']) cell(tr, row[key]);
+          cell(tr, row.ip_count);
+          cell(tr, row.detail || '');
+          results.append(tr);
+        }
+      }
+
+      const harBody = $('har-rows');
+      harBody.replaceChildren();
+      if (!har.length) {
+        emptyRow(harBody, 5, 'Nenhuma entrada HAR neste relatório.');
+        return;
+      }
+      for (const row of har.slice(0, HAR_LIMIT)) {
+        const tr = document.createElement('tr');
+        cell(tr, row.host);
+        cell(tr, row.scheme);
+        cell(tr, row.status);
+        cell(tr, row.duration_ms);
+        cell(tr, row.error || '');
+        harBody.append(tr);
+      }
+      if (har.length > HAR_LIMIT) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.textContent = 'Exibidas ' + HAR_LIMIT + ' de ' + har.length + ' entradas. O CSV contém a lista completa.';
+        tr.append(td);
+        harBody.append(tr);
+      }
+    }
+
+    function readJson(file) {
+      if (file.size > 20 * 1024 * 1024) {
+        $('status').textContent = 'Arquivo acima de 20 MiB. Use o latest.json gerado pelo script.';
+        return;
+      }
+      file.text().then(text => {
+        render(JSON.parse(text), file.name);
+      }).catch(err => {
+        $('status').textContent = 'Erro ao ler JSON: ' + err.message;
+      });
+    }
+
+    $('file').addEventListener('change', event => {
+      const file = event.target.files && event.target.files[0];
+      if (file) readJson(file);
+    });
+
+    fetch('reports/latest.json').then(response => {
+      if (!response.ok) throw new Error('ausente');
+      return response.json();
+    }).then(report => {
+      render(report, 'reports/latest.json');
+    }).catch(() => {});
+  </script>
+</body>
+</html>
